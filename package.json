@@ -1,0 +1,24 @@
+{
+  "name": "safeguardv2",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": ["backend", "frontend"],
+  "engines": { "node": ">=22.12.0" },
+  "scripts": {
+    "dev": "concurrently --names \"BACKEND,FRONTEND\" --prefix-colors \"cyan,magenta\" \"npm run dev -w @safeguard/api\" \"npm run dev -w @safeguard/web\"",
+    "build": "npm run build -w @safeguard/api && npm run build -w @safeguard/web",
+    "lint": "npm run lint --workspaces",
+    "typecheck": "npm run prisma:generate -w @safeguard/api && npm run typecheck --workspaces",
+    "test": "npm run prisma:generate -w @safeguard/api && npm run test -w @safeguard/api && npm run test -w @safeguard/web",
+    "prisma:status": "npm run prisma:status -w @safeguard/api"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "concurrently": "^9.1.2",
+    "eslint": "^10.12.0",
+    "globals": "^16.5.0",
+    "prettier": "^3.9.0",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.56.0"
+  }
+}

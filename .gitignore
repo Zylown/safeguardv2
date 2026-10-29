@@ -1,0 +1,16 @@
+node_modules/
+.next/
+frontend/.next/
+frontend/AGENTS.md
+dist/
+coverage/
+*.tsbuildinfo
+.env
+.env.*
+!.env.example
+!.env.*.example
+src/generated/
+backend/src/generated/
+playwright-report/
+test-results/
+.turbo/

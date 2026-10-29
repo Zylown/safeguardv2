@@ -1,0 +1,79 @@
+@import 'tailwindcss';
+
+@custom-variant dark (&:where([data-theme=dark], [data-theme=dark] *));
+
+@theme inline {
+  --color-canvas: var(--canvas);
+  --color-surface: var(--surface);
+  --color-surface-muted: var(--surface-muted);
+  --color-ink: var(--ink);
+  --color-ink-muted: var(--ink-muted);
+  --color-line: var(--line);
+  --color-brand: var(--brand);
+  --color-brand-strong: var(--brand-strong);
+  --color-accent: var(--accent);
+  --color-danger: var(--danger);
+  --font-sans: var(--font-ui);
+}
+
+:root {
+  color-scheme: light;
+  --canvas: #f2f6f6;
+  --surface: #ffffff;
+  --surface-muted: #e9f0ef;
+  --ink: #142b31;
+  --ink-muted: #597077;
+  --line: #d7e2e1;
+  --brand: #14665f;
+  --brand-strong: #0e4d49;
+  --accent: #d9eee9;
+  --danger: #a63232;
+  --font-ui: Arial, Helvetica, sans-serif;
+}
+
+[data-theme='dark'] {
+  color-scheme: dark;
+  --canvas: #101a1d;
+  --surface: #172529;
+  --surface-muted: #203438;
+  --ink: #edf6f4;
+  --ink-muted: #a8bfbd;
+  --line: #30484a;
+  --brand: #55c2b2;
+  --brand-strong: #80d7c9;
+  --accent: #1e4442;
+  --danger: #ff9a91;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--canvas);
+  color: var(--ink);
+  font-family: var(--font-ui);
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+button,
+input {
+  font: inherit;
+}
+
+button:focus-visible,
+a:focus-visible,
+input:focus-visible {
+  outline: 3px solid var(--brand);
+  outline-offset: 3px;
+}
+
+::selection {
+  background: var(--accent);
+  color: var(--ink);
+}

@@ -1,0 +1,53 @@
+{
+  "name": "@safeguard/api",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "nest start --watch",
+    "build": "npm run prisma:generate && nest build",
+    "start": "node dist/src/main.js",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test": "jest --runInBand && tsx --test test/owner-bootstrap.test.ts",
+    "test:integration": "ts-node --project tsconfig.json test/prisma.integration.ts",
+    "test:auth:integration": "ts-node --project tsconfig.json test/auth.integration.ts",
+    "prisma:generate": "prisma generate",
+    "prisma:validate": "prisma validate",
+    "prisma:status": "prisma migrate status",
+    "auth:link-admin:manual": "node --env-file=.env --import tsx scripts/admin-link-manual.ts"
+  },
+  "dependencies": {
+    "@better-auth/prisma-adapter": "1.7.10",
+    "better-auth": "1.7.10",
+    "express": "^5.2.1",
+    "@nestjs/common": "12.1.3",
+    "@nestjs/core": "12.1.3",
+    "@nestjs/platform-express": "12.1.3",
+    "@nestjs/swagger": "12.0.2",
+    "@prisma/adapter-pg": "7.10.0",
+    "@prisma/client": "7.10.0",
+    "@supabase/supabase-js": "^2.118.0",
+    "class-transformer": "^0.5.1",
+    "class-validator": "^0.14.2",
+    "dotenv": "17.4.2",
+    "pg": "^8.16.3",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.2"
+  },
+  "devDependencies": {
+    "@nestjs/cli": "^11.0.14",
+    "@nestjs/schematics": "^11.0.9",
+    "@nestjs/testing": "12.1.3",
+    "@types/jest": "^30.0.0",
+    "@types/node": "^24.10.0",
+    "@types/express": "^5.0.0",
+    "@types/pg": "^8.15.5",
+    "jest": "^30.2.0",
+    "prisma": "7.10.0",
+    "ts-jest": "^29.4.6",
+    "ts-node": "^10.9.2",
+    "tsconfig-paths": "^4.2.0",
+    "typescript": "^5.9.3",
+    "tsx": "4.23.15"
+  }
+}
