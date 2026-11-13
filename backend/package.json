@@ -8,13 +8,15 @@
     "start": "node dist/src/main.js",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
-    "test": "jest --runInBand && tsx --test test/owner-bootstrap.test.ts",
+    "test": "jest --runInBand && tsx --test test/owner-bootstrap.test.ts test/demo-crm.test.ts test/crm-query-validation.test.ts",
     "test:integration": "ts-node --project tsconfig.json test/prisma.integration.ts",
     "test:auth:integration": "ts-node --project tsconfig.json test/auth.integration.ts",
     "prisma:generate": "prisma generate",
     "prisma:validate": "prisma validate",
     "prisma:status": "prisma migrate status",
-    "auth:link-admin:manual": "node --env-file=.env --import tsx scripts/admin-link-manual.ts"
+    "auth:link-admin:manual": "node --env-file=.env --import tsx scripts/admin-link-manual.ts",
+    "crm:seed-demo": "node --env-file=.env --import tsx scripts/seed-demo-crm.ts",
+    "crm:cleanup-demo": "node --env-file=.env --import tsx scripts/cleanup-demo-crm.ts"
   },
   "dependencies": {
     "@better-auth/prisma-adapter": "1.7.10",

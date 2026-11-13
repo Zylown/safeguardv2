@@ -19,32 +19,40 @@ import {
   ServiceUnavailableException,
   UnauthorizedException,
 } from '@nestjs/common';
-import type { ExecutionContext } from '@nestjs/common';
-import { getSafeGuardAuth } from '../auth/auth.config';
-import type { PrismaService } from '../prisma/prisma.service';
 import {
-  BetterAuthInternalUserGuard,
   getSingleBetterAuthSessionCookie,
+  mapBetterAuthRoleToInternalRole,
   resolveBetterAuthInternalUser,
+} from './better-auth-internal-user.guard';
+import type {
+  BetterAuthIdentity,
+  BetterAuthInternalUserLookup,
+  BetterAuthSessionLookup,
 } from './better-auth-internal-user.guard';
 
 describe('BetterAuthInternalUserGuard boundary', () => {
   const originalNodeEnv = process.env.NODE_ENV;
   const authUserId = 'a9eebc6e-bf83-47ae-a329-7fbf2bf7f9ad';
-  const internalUser = {
+  const activeInternalUser = {
     id: 'ccbbda56-785a-4d85-9dc4-2dbf8c8a6803',
     email: 'staff@example.test',
     fullName: 'Staff Member',
-    role: 'ADMIN' as const,
+    role: 'SUPER_ADMIN' as const,
     isActive: true,
   };
-  const verifiedSession = (id = authUserId, createdAt = new Date('2026-10-16T10:00:01.000Z')) => ({
-    user: {
-      id,
-      twoFactorEnabled: true,
-      twoFactorEnabledAt: new Date('2026-10-16T10:00:00.000Z'),
-    },
-    session: { createdAt },
+  const identity: BetterAuthIdentity = {
+    id: authUserId,
+    email: 'owner@example.test',
+    name: 'Owner Name',
+    role: 'admin',
+    banned: false,
+    twoFactorEnabled: false,
+    twoFactorEnabledAt: null,
+  };
+  const cookie = 'safeguard-auth.session_token=opaque';
+  const getSession: BetterAuthSessionLookup = async () => ({
+    user: { id: authUserId },
+    session: { createdAt: new Date('2026-10-16T10:00:01.000Z') },
   });
 
   beforeEach(() => {
@@ -64,226 +72,202 @@ describe('BetterAuthInternalUserGuard boundary', () => {
         'safeguard-auth.session_token=one; safeguard-auth.session_token=two',
       ),
     ).toBeNull();
-    expect(
-      getSingleBetterAuthSessionCookie('other=value; safeguard-auth.session_token=opaque'),
-    ).toBe('safeguard-auth.session_token=opaque');
+    expect(getSingleBetterAuthSessionCookie(`other=value; ${cookie}`)).toBe(
+      cookie,
+    );
   });
 
-  it('rejects missing and invalid sessions before internal lookup', async () => {
-    const lookup = jest.fn();
+  it('centralizes the Better Auth role mapping and rejects unmapped roles', () => {
+    expect(mapBetterAuthRoleToInternalRole('admin')).toBe('SUPER_ADMIN');
+    expect(mapBetterAuthRoleToInternalRole('user')).toBeNull();
+    expect(mapBetterAuthRoleToInternalRole(null)).toBeNull();
+  });
+
+  it('creates the first active SUPER_ADMIN from an eligible Better Auth admin identity', async () => {
+    const findInternalUser = jest.fn(async () => null);
+    const createInternalUser = jest.fn(async () => activeInternalUser);
+
     await expect(
-      resolveBetterAuthInternalUser(undefined, jest.fn(), lookup),
+      resolveBetterAuthInternalUser(
+        cookie,
+        getSession,
+        async () => identity,
+        findInternalUser,
+        createInternalUser,
+      ),
+    ).resolves.toMatchObject({ role: 'SUPER_ADMIN' });
+    expect(createInternalUser).toHaveBeenCalledWith(identity, 'SUPER_ADMIN');
+    expect(findInternalUser).toHaveBeenCalledTimes(1);
+  });
+
+  it('uses an existing active InternalUser without creating or modifying it', async () => {
+    const findInternalUser = jest.fn(async () => ({
+      ...activeInternalUser,
+      role: 'ADMIN' as const,
+    }));
+    const createInternalUser = jest.fn();
+
+    await expect(
+      resolveBetterAuthInternalUser(
+        cookie,
+        getSession,
+        async () => identity,
+        findInternalUser,
+        createInternalUser,
+      ),
+    ).resolves.toMatchObject({ id: activeInternalUser.id, role: 'ADMIN' });
+    expect(createInternalUser).not.toHaveBeenCalled();
+  });
+
+  it('does not reactivate an existing inactive InternalUser', async () => {
+    const inactive = { ...activeInternalUser, isActive: false };
+    const createInternalUser = jest.fn();
+    await expect(
+      resolveBetterAuthInternalUser(
+        cookie,
+        getSession,
+        async () => identity,
+        async () => inactive,
+        createInternalUser,
+      ),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    expect(createInternalUser).not.toHaveBeenCalled();
+  });
+
+  it('denies a Better Auth identity without the admin role', async () => {
+    const findInternalUser = jest.fn();
+    await expect(
+      resolveBetterAuthInternalUser(
+        cookie,
+        getSession,
+        async () => ({ ...identity, role: 'user' }),
+        findInternalUser,
+        jest.fn(),
+      ),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    expect(findInternalUser).not.toHaveBeenCalled();
+  });
+
+  it('denies banned identities even when Better Auth role is admin', async () => {
+    const findInternalUser = jest.fn();
+    await expect(
+      resolveBetterAuthInternalUser(
+        cookie,
+        getSession,
+        async () => ({ ...identity, banned: true }),
+        findInternalUser,
+        jest.fn(),
+      ),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    expect(findInternalUser).not.toHaveBeenCalled();
+  });
+
+  it('returns 401 for a missing or invalid session before looking up identity', async () => {
+    const findIdentity = jest.fn();
+    await expect(
+      resolveBetterAuthInternalUser(
+        undefined,
+        getSession,
+        findIdentity,
+        jest.fn(),
+        jest.fn(),
+      ),
     ).rejects.toBeInstanceOf(UnauthorizedException);
     await expect(
       resolveBetterAuthInternalUser(
-        'safeguard-auth.session_token=invalid',
+        cookie,
         async () => null,
-        lookup,
+        findIdentity,
+        jest.fn(),
+        jest.fn(),
       ),
     ).rejects.toBeInstanceOf(UnauthorizedException);
-    expect(lookup).not.toHaveBeenCalled();
+    expect(findIdentity).not.toHaveBeenCalled();
   });
 
-  it('passes only the session cookie to Better Auth, ignoring forged identity headers', async () => {
-    const getSession = jest.fn(async (headers: Headers) => {
-      expect(headers.get('cookie')).toBe('safeguard-auth.session_token=opaque');
-      expect(headers.get('x-user-id')).toBeNull();
-      return {
-        user: {
-          id: authUserId,
-          twoFactorEnabled: true,
-          twoFactorEnabledAt: new Date('2026-10-16T10:00:00.000Z'),
-        },
-        session: { createdAt: new Date('2026-10-16T10:00:01.000Z') },
-      };
-    });
-    const lookup = jest.fn(async () => internalUser);
-
-    await expect(
-      resolveBetterAuthInternalUser(
-        'safeguard-auth.session_token=opaque; x-user-id=attacker',
-        getSession,
-        lookup,
-        async () => true,
-      ),
-    ).resolves.toEqual({
-      id: internalUser.id,
-      email: internalUser.email,
-      fullName: internalUser.fullName,
-      role: internalUser.role,
-    });
-    expect(lookup).toHaveBeenCalledWith(authUserId);
-  });
-
-  it('rejects invalid identity ids, missing users, and inactive users', async () => {
-    const invalidIdLookup = jest.fn();
-    await expect(
-      resolveBetterAuthInternalUser(
-        'safeguard-auth.session_token=opaque',
-        async () => verifiedSession('attacker-controlled-id'),
-        invalidIdLookup,
-      ),
-    ).rejects.toBeInstanceOf(UnauthorizedException);
-    expect(invalidIdLookup).not.toHaveBeenCalled();
-
-    const getSession = async () => verifiedSession();
-    await expect(
-      resolveBetterAuthInternalUser(
-        'safeguard-auth.session_token=opaque',
-        getSession,
-        async () => null,
-      ),
-    ).rejects.toBeInstanceOf(ForbiddenException);
-    await expect(
-      resolveBetterAuthInternalUser(
-        'safeguard-auth.session_token=opaque',
-        getSession,
-        async () => ({ ...internalUser, isActive: false }),
-      ),
-    ).rejects.toBeInstanceOf(ForbiddenException);
-  });
-
-  it('rejects active internal users without the ADMIN business role', async () => {
-    await expect(
-      resolveBetterAuthInternalUser(
-        'safeguard-auth.session_token=opaque',
-        async () => verifiedSession(),
-        async () => ({ ...internalUser, role: 'OPERATIONS' as const }),
-      ),
-    ).rejects.toBeInstanceOf(ForbiddenException);
-  });
-
-  it('allows a SUPER_ADMIN only with a fresh session and verified TOTP enrollment', async () => {
-    const session = {
-      user: {
-        id: authUserId,
-        twoFactorEnabled: true,
-        twoFactorEnabledAt: new Date('2026-10-16T10:00:00.000Z'),
-      },
-      session: { createdAt: new Date('2026-10-16T10:00:01.000Z') },
+  it('re-reads the row after a concurrent first-login unique conflict', async () => {
+    let reads = 0;
+    const findInternalUser: BetterAuthInternalUserLookup = async () => {
+      reads += 1;
+      return reads === 1 ? null : activeInternalUser;
     };
+    const createInternalUser = jest.fn(async () => {
+      throw Object.assign(new Error('unique'), { code: 'P2002' });
+    });
+
     await expect(
       resolveBetterAuthInternalUser(
-        'safeguard-auth.session_token=opaque',
-        async () => session,
-        async () => ({ ...internalUser, role: 'SUPER_ADMIN' as const }),
-        async () => true,
+        cookie,
+        getSession,
+        async () => identity,
+        findInternalUser,
+        createInternalUser,
       ),
-    ).resolves.toMatchObject({ role: 'SUPER_ADMIN' });
+    ).resolves.toMatchObject({ id: activeInternalUser.id });
+    expect(reads).toBe(2);
   });
 
-  it('allows an active administrator in development before optional TOTP enrollment', async () => {
-    await expect(
-      resolveBetterAuthInternalUser(
-        'safeguard-auth.session_token=opaque',
-        async () => ({
-          user: { id: authUserId, twoFactorEnabled: false },
-          session: { createdAt: new Date('2026-10-16T10:00:00.000Z') },
-        }),
-        async () => ({ ...internalUser, role: 'SUPER_ADMIN' as const }),
-      ),
-    ).resolves.toMatchObject({ role: 'SUPER_ADMIN' });
-  });
-
-  it('requires TOTP outside development when the account has not enrolled', async () => {
+  it('preserves TOTP enforcement in production and requires a fresh verified session', async () => {
     process.env.NODE_ENV = 'production';
     await expect(
       resolveBetterAuthInternalUser(
         '__Secure-safeguard-auth.session_token=opaque',
-        async () => ({
-          user: { id: authUserId, twoFactorEnabled: false },
-          session: { createdAt: new Date('2026-10-16T10:00:00.000Z') },
-        }),
-        async () => ({ ...internalUser, role: 'SUPER_ADMIN' as const }),
+        getSession,
+        async () => identity,
+        async () => activeInternalUser,
+        jest.fn(),
       ),
     ).rejects.toBeInstanceOf(ForbiddenException);
-    process.env.NODE_ENV = 'development';
-  });
 
-  it('denies sessions issued before TOTP enrollment and unverified enrollment records', async () => {
-    const preEnrollmentSession = {
-      user: {
-        id: authUserId,
-        twoFactorEnabled: true,
-        twoFactorEnabledAt: new Date('2026-10-16T10:00:00.000Z'),
-      },
-      session: { createdAt: new Date('2026-10-16T09:59:00.000Z') },
+    const enrolledIdentity = {
+      ...identity,
+      twoFactorEnabled: true,
+      twoFactorEnabledAt: new Date('2026-10-16T10:00:00.000Z'),
     };
     await expect(
       resolveBetterAuthInternalUser(
-        'safeguard-auth.session_token=opaque',
-        async () => preEnrollmentSession,
-        async () => internalUser,
+        '__Secure-safeguard-auth.session_token=opaque',
+        getSession,
+        async () => enrolledIdentity,
+        async () => activeInternalUser,
+        jest.fn(),
         async () => true,
       ),
-    ).rejects.toBeInstanceOf(ForbiddenException);
-
-    await expect(
-      resolveBetterAuthInternalUser(
-        'safeguard-auth.session_token=opaque',
-        async () => ({
-          ...preEnrollmentSession,
-          session: { createdAt: new Date('2026-10-16T10:00:01Z') },
-        }),
-        async () => internalUser,
-        async () => false,
-      ),
-    ).rejects.toBeInstanceOf(ForbiddenException);
+    ).resolves.toMatchObject({ role: 'SUPER_ADMIN' });
   });
 
-  it('checks persisted MFA state even when the session omits the optional TOTP plugin fields', async () => {
-    const getSession = jest.fn(async () => ({
-      user: { id: authUserId },
-      session: { createdAt: new Date('2026-10-16T09:59:00.000Z') },
-    }));
-    jest.mocked(getSafeGuardAuth).mockReturnValue({ api: { getSession } } as never);
-    const findUnique = jest.fn(async () => ({
-      twoFactorEnabled: true,
-      twoFactorEnabledAt: new Date('2026-10-16T10:00:00.000Z'),
-    }));
-    const prisma = { user: { findUnique }, internalUser: { findUnique: async () => internalUser } };
-    const guard = new BetterAuthInternalUserGuard(prisma as unknown as PrismaService);
-    const request = { headers: { cookie: 'safeguard-auth.session_token=opaque' } };
-    const context = {
-      switchToHttp: () => ({ getRequest: () => request }),
-    } as unknown as ExecutionContext;
-
-    await expect(guard.canActivate(context)).rejects.toBeInstanceOf(ForbiddenException);
-    expect(findUnique).toHaveBeenCalledWith({
-      where: { id: authUserId },
-      select: { twoFactorEnabled: true, twoFactorEnabledAt: true },
-    });
-    expect(request).not.toHaveProperty('betterAuthInternalUser');
-  });
-
-  it('fails closed when the session authority or internal database is unavailable', async () => {
-    const cookie = 'safeguard-auth.session_token=opaque';
+  it('fails closed when session, identity, database, or MFA lookup fails', async () => {
     await expect(
       resolveBetterAuthInternalUser(
         cookie,
         async () => {
           throw new Error('private');
         },
+        async () => identity,
+        jest.fn(),
         jest.fn(),
       ),
     ).rejects.toBeInstanceOf(ServiceUnavailableException);
     await expect(
       resolveBetterAuthInternalUser(
         cookie,
-        async () => verifiedSession(),
+        getSession,
         async () => {
           throw new Error('private');
         },
+        jest.fn(),
+        jest.fn(),
       ),
     ).rejects.toBeInstanceOf(ServiceUnavailableException);
     await expect(
       resolveBetterAuthInternalUser(
         cookie,
-        async () => verifiedSession(),
-        async () => internalUser,
+        getSession,
+        async () => identity,
         async () => {
           throw new Error('private');
         },
+        jest.fn(),
       ),
     ).rejects.toBeInstanceOf(ServiceUnavailableException);
   });

@@ -6,11 +6,46 @@ const AUTH_COOKIE_NAMES = [
 ] as const;
 const MAX_COOKIE_HEADER_LENGTH = 8_192;
 const MAX_BODY_BYTES = 32_768;
+const VALIDATION_FIELDS = new Set([
+  'page', 'pageSize', 'q', 'status', 'locale', 'sortBy', 'sortDirection',
+  'countryCode', 'stage', 'type', 'companyId', 'opportunityId', 'inquiryId',
+  'companyName', 'contactName', 'email', 'phone', 'productName',
+  'productReference', 'quantity', 'message', 'name', 'legalName',
+  'websiteUrl', 'city', 'industry', 'notes', 'firstName', 'lastName',
+  'jobTitle', 'estimatedAmount', 'currencyCode', 'followUpAt', 'ownerId',
+  'description', 'occurredAt', 'taskDueAt', 'taskStatus',
+]);
 type RouteContext = { params: Promise<{ segments: string[] }> };
 type HttpMethod = 'GET' | 'POST' | 'PATCH' | 'DELETE';
 
 function errorResponse(status: number, code: string): Response {
   return Response.json({ error: code }, { status, headers: { 'cache-control': 'no-store' } });
+}
+
+function collectInvalidFields(value: unknown, fields = new Set<string>()): Set<string> {
+  if (Array.isArray(value)) {
+    for (const item of value) collectInvalidFields(item, fields);
+  } else if (value && typeof value === 'object') {
+    const error = value as { property?: unknown; children?: unknown };
+    if (typeof error.property === 'string' && VALIDATION_FIELDS.has(error.property))
+      fields.add(error.property);
+    if (error.children) collectInvalidFields(error.children, fields);
+  } else if (typeof value === 'string') {
+    const field = /^([A-Za-z][A-Za-z0-9]*)\s/.exec(value)?.[1];
+    if (field && VALIDATION_FIELDS.has(field)) fields.add(field);
+  }
+  return fields;
+}
+
+async function sanitizeValidationResponse(upstream: Response): Promise<Response> {
+  const payload = await upstream.clone().json().catch(() => null) as {
+    message?: unknown;
+  } | null;
+  const invalidFields = [...collectInvalidFields(payload?.message)].slice(0, 20);
+  return Response.json(
+    { statusCode: 400, invalidFields },
+    { status: 400, headers: { 'cache-control': 'no-store' } },
+  );
 }
 
 function getAuthCookie(cookieHeader: string | null): string | null {
@@ -156,6 +191,7 @@ async function handle(
       return errorResponse(502, 'api_unavailable');
     if (upstream.status === 204)
       return new Response(null, { status: 204, headers: { 'cache-control': 'no-store' } });
+    if (upstream.status === 400) return sanitizeValidationResponse(upstream);
     const contentType = upstream.headers.get('content-type')?.toLowerCase() ?? '';
     if (!contentType.includes('application/json')) return errorResponse(502, 'api_unavailable');
     return new Response(upstream.body, {

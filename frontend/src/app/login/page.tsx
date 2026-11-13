@@ -23,7 +23,9 @@ export default async function LoginPage({
   if (!isBetterAuthDevelopmentEnabled()) notFound();
   const { auth, mfa } = await searchParams;
   const notice =
-    typeof auth === 'string' ? authNotices[auth as keyof typeof authNotices] : undefined;
+    typeof auth === 'string'
+      ? authNotices[auth as keyof typeof authNotices]
+      : undefined;
 
   return (
     <main className="min-h-screen bg-canvas text-ink">
@@ -38,7 +40,9 @@ export default async function LoginPage({
           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-brand">
             Acceso interno
           </p>
-          <h1 className="mt-3 text-2xl font-semibold tracking-tight">Iniciar sesión</h1>
+          <h1 className="mt-3 text-2xl font-semibold tracking-tight">
+            Iniciar sesión
+          </h1>
           <p className="mt-2 text-sm leading-6 text-ink-muted">
             Ingresa con tu cuenta SafeGuard autorizada.
           </p>
@@ -52,7 +56,8 @@ export default async function LoginPage({
           ) : null}
           {mfa === 'enabled' ? (
             <p role="status" className="mt-4 text-sm text-brand">
-              Authenticator quedó activado. Inicia sesión nuevamente.
+              La aplicación de autenticación quedó activada. Inicia sesión
+              nuevamente.
             </p>
           ) : null}
           <BetterAuthLoginForm />

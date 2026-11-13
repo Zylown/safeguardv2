@@ -1,8 +1,8 @@
-"use client";
+'use client';
 
-import { useState, type FormEvent } from "react";
-import { useRouter } from "next/navigation";
-import { getBetterAuthClient } from "@/lib/better-auth-client";
+import { useState, type FormEvent } from 'react';
+import { useRouter } from 'next/navigation';
+import { getBetterAuthClient } from '@/lib/better-auth-client';
 
 export function BetterAuthLoginForm() {
   const router = useRouter();
@@ -15,8 +15,8 @@ export function BetterAuthLoginForm() {
     setError(undefined);
     setPending(true);
     const formData = new FormData(event.currentTarget);
-    const email = String(formData.get("email") ?? "").trim();
-    const password = String(formData.get("password") ?? "");
+    const email = String(formData.get('email') ?? '').trim();
+    const password = String(formData.get('password') ?? '');
 
     try {
       const result = await getBetterAuthClient().signIn.email({
@@ -26,36 +26,34 @@ export function BetterAuthLoginForm() {
       if (result.error) {
         setError(
           result.error.status >= 500
-            ? "El servicio de acceso no está disponible temporalmente. Inténtalo nuevamente más tarde."
-            : "No fue posible iniciar sesión. Verifica tus credenciales o contacta al administrador.",
+            ? 'El servicio de acceso no está disponible temporalmente. Inténtalo nuevamente más tarde.'
+            : 'No fue posible iniciar sesión. Verifica tus credenciales o contacta al administrador.',
         );
         return;
       }
-      const authorization = await fetch("/api/backend/me", {
-        cache: "no-store",
-        credentials: "same-origin",
+      const authorization = await fetch('/api/backend/me', {
+        cache: 'no-store',
+        credentials: 'same-origin',
       });
       if (authorization.status === 403) {
-        setError(
-          "Tu acceso está pendiente de autorización empresarial. Contacta al administrador.",
-        );
+        setError('Tu cuenta no tiene acceso a este panel.');
         return;
       }
       if (authorization.status === 401) {
-        setError("No se pudo validar la sesión. Inténtalo nuevamente.");
+        setError('No se pudo validar la sesión. Inténtalo nuevamente.');
         return;
       }
       if (!authorization.ok) {
         setError(
-          "El servicio de autorización no está disponible temporalmente. Inténtalo nuevamente más tarde.",
+          'El servicio de autorización no está disponible temporalmente. Inténtalo nuevamente más tarde.',
         );
         return;
       }
-      router.replace("/dashboard");
+      router.replace('/dashboard');
       router.refresh();
     } catch {
       setError(
-        "La autenticación experimental no está disponible. Verifica el estado de la base y contacta al administrador.",
+        'La autenticación experimental no está disponible. Verifica el estado de la base y contacta al administrador.',
       );
     } finally {
       setPending(false);
@@ -93,18 +91,18 @@ export function BetterAuthLoginForm() {
           id="better-auth-password"
           name="password"
           required
-          type={passwordVisible ? "text" : "password"}
+          type={passwordVisible ? 'text' : 'password'}
         />
         <button
           aria-label={
-            passwordVisible ? "Ocultar contraseña" : "Mostrar contraseña"
+            passwordVisible ? 'Ocultar contraseña' : 'Mostrar contraseña'
           }
           aria-pressed={passwordVisible}
           className="-mt-11 mr-2 flex min-h-9 items-center justify-self-end rounded-lg px-2 text-xs font-semibold text-brand hover:bg-accent"
           onClick={() => setPasswordVisible((visible) => !visible)}
           type="button"
         >
-          {passwordVisible ? "Ocultar" : "Mostrar"}
+          {passwordVisible ? 'Ocultar' : 'Mostrar'}
         </button>
       </div>
       {error ? (
@@ -120,7 +118,7 @@ export function BetterAuthLoginForm() {
         disabled={pending}
         type="submit"
       >
-        {pending ? "Verificando…" : "Iniciar sesión"}
+        {pending ? 'Verificando…' : 'Iniciar sesión'}
       </button>
       <p className="text-center text-xs leading-5 text-ink-muted">
         Acceso privado para identidades autorizadas. El alta de cuentas no está

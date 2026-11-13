@@ -1,14 +1,27 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { ThemeToggle } from '@/components/better-auth/theme-toggle';
+import { DialogModal } from '@/components/dialog-modal';
 import { getBetterAuthClient } from '@/lib/better-auth-client';
+import {
+  buildCrmListQuery,
+  crmApiErrorMessage,
+  type CrmRequestKind,
+} from '@/lib/crm-list';
 import { signOutAndRedirect } from '@/lib/home-entry';
 
-type ModuleKey = 'inquiries' | 'companies' | 'contacts' | 'opportunities' | 'activities';
+type ModuleKey =
+  'inquiries' | 'companies' | 'contacts' | 'opportunities' | 'activities';
 type CrmRecord = Record<string, unknown> & { id: string };
-type ListResult = { items: CrmRecord[]; page: number; pageSize: number; total: number };
+type ListResult = {
+  items: CrmRecord[];
+  page: number;
+  pageSize: number;
+  total: number;
+};
 type Lookups = {
   companies: CrmRecord[];
   opportunities: CrmRecord[];
@@ -28,7 +41,11 @@ const modules: Array<{ id: ModuleKey; label: string; description: string }> = [
     label: 'Empresas',
     description: 'Organizaciones con las que trabaja SafeGuard.',
   },
-  { id: 'contacts', label: 'Contactos', description: 'Personas relacionadas con una empresa.' },
+  {
+    id: 'contacts',
+    label: 'Contactos',
+    description: 'Personas relacionadas con una empresa.',
+  },
   {
     id: 'opportunities',
     label: 'Oportunidades',
@@ -42,7 +59,73 @@ const modules: Array<{ id: ModuleKey; label: string; description: string }> = [
 ];
 
 const inquiryStatuses = ['NEW', 'REVIEWING', 'CONTACTED', 'CLOSED'];
-const opportunityStages = ['NEW', 'QUALIFIED', 'QUOTATION', 'NEGOTIATION', 'WON', 'LOST'];
+const opportunityStages = [
+  'NEW',
+  'QUALIFIED',
+  'QUOTATION',
+  'NEGOTIATION',
+  'WON',
+  'LOST',
+];
+const statusLabels: Record<string, string> = {
+  NEW: 'Nueva',
+  REVIEWING: 'En revisión',
+  CONTACTED: 'Contactada',
+  CLOSED: 'Cerrada',
+  QUALIFIED: 'Calificada',
+  QUOTATION: 'Cotización',
+  NEGOTIATION: 'Negociación',
+  WON: 'Ganada',
+  LOST: 'Perdida',
+  OPEN: 'Abierta',
+  COMPLETED: 'Completada',
+  CANCELED: 'Cancelada',
+  NOTE: 'Nota',
+  CALL: 'Llamada',
+  MEETING: 'Reunión',
+  TASK: 'Tarea',
+};
+
+function NavIcon({ name }: { name: string }) {
+  const paths: Record<string, string> = {
+    inquiries: 'M4 5h16v14H4z M8 9h8 M8 13h5',
+    companies:
+      'M4 20V5l8-3 8 3v15 M8 8h1 M15 8h1 M8 12h1 M15 12h1 M10 20v-4h4v4',
+    contacts:
+      'M16 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2 M10 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8 M20 8v6 M17 11h6',
+    opportunities: 'M3 17l6-6 4 4 8-9 M15 6h6v6',
+    activities: 'M12 8v4l3 2 M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0',
+    home: 'M3 10.5 12 3l9 7.5 M5 9v12h14V9 M9 21v-7h6v7',
+    settings:
+      'M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8 M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-1.7 2.9-.2-.1a1.7 1.7 0 0 0-1.8.1l-.2.1h-3.4l-.1-.2a1.7 1.7 0 0 0-1.5-1l-.2-.1-2.9 1.7-.1-.2a1.7 1.7 0 0 0-.1-1.8l-.1-.2v-3.4l.2-.1a1.7 1.7 0 0 0 1-1.5l.1-.2-1.7-2.9.2-.1a1.7 1.7 0 0 0 1.8-.1l.2-.1h3.4l.1.2a1.7 1.7 0 0 0 1.5 1l.2.1 2.9-1.7.1.2a1.7 1.7 0 0 0 .1 1.8l.1.2v3.4z',
+  };
+  return (
+    <svg
+      aria-hidden="true"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.7"
+      className="size-5 shrink-0"
+    >
+      <path
+        d={paths[name] ?? paths.home}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+class CrmApiError extends Error {
+  constructor(
+    readonly status: number,
+    kind: CrmRequestKind = 'other',
+    invalidFields: string[] = [],
+  ) {
+    super(crmApiErrorMessage(status, kind, invalidFields));
+  }
+}
 
 function text(value: unknown): string {
   if (typeof value === 'string') return value;
@@ -53,7 +136,9 @@ function text(value: unknown): string {
 function labelFor(record: CrmRecord, module: ModuleKey): string {
   if (module === 'companies') return text(record.name);
   if (module === 'contacts')
-    return [text(record.firstName), text(record.lastName)].filter(Boolean).join(' ');
+    return [text(record.firstName), text(record.lastName)]
+      .filter(Boolean)
+      .join(' ');
   if (module === 'opportunities') return text(record.name);
   if (module === 'activities') return text(record.description);
   return (
@@ -64,12 +149,21 @@ function labelFor(record: CrmRecord, module: ModuleKey): string {
   );
 }
 
-function fieldsFor(
-  module: ModuleKey,
-): Array<{ name: string; label: string; required?: boolean; type?: string; maxLength?: number }> {
+function fieldsFor(module: ModuleKey): Array<{
+  name: string;
+  label: string;
+  required?: boolean;
+  type?: string;
+  maxLength?: number;
+}> {
   if (module === 'companies')
     return [
-      { name: 'name', label: 'Nombre de empresa', required: true, maxLength: 200 },
+      {
+        name: 'name',
+        label: 'Nombre de empresa',
+        required: true,
+        maxLength: 200,
+      },
       { name: 'legalName', label: 'Razón social', maxLength: 240 },
       { name: 'websiteUrl', label: 'Sitio web', type: 'url', maxLength: 2048 },
       { name: 'countryCode', label: 'País (código ISO)', maxLength: 2 },
@@ -88,10 +182,19 @@ function fieldsFor(
     ];
   if (module === 'opportunities')
     return [
-      { name: 'name', label: 'Nombre de oportunidad', required: true, maxLength: 200 },
+      {
+        name: 'name',
+        label: 'Nombre de oportunidad',
+        required: true,
+        maxLength: 200,
+      },
       { name: 'estimatedAmount', label: 'Importe estimado', type: 'number' },
       { name: 'currencyCode', label: 'Moneda ISO (ej. USD)', maxLength: 3 },
-      { name: 'followUpAt', label: 'Próximo seguimiento', type: 'datetime-local' },
+      {
+        name: 'followUpAt',
+        label: 'Próximo seguimiento',
+        type: 'datetime-local',
+      },
       { name: 'notes', label: 'Notas', type: 'textarea', maxLength: 10000 },
     ];
   if (module === 'activities')
@@ -103,7 +206,11 @@ function fieldsFor(
         type: 'textarea',
         maxLength: 4000,
       },
-      { name: 'taskDueAt', label: 'Vencimiento (tareas)', type: 'datetime-local' },
+      {
+        name: 'taskDueAt',
+        label: 'Vencimiento (tareas)',
+        type: 'datetime-local',
+      },
     ];
   return [
     { name: 'companyName', label: 'Empresa', maxLength: 200 },
@@ -124,33 +231,48 @@ function fieldsFor(
   ];
 }
 
-async function crmRequest<T>(path: string, init?: RequestInit): Promise<T> {
+async function crmRequest<T>(
+  path: string,
+  init?: RequestInit,
+  kind: CrmRequestKind = 'other',
+): Promise<T> {
   const response = await fetch(`/api/backend/crm/${path}`, {
     ...init,
     cache: 'no-store',
     credentials: 'same-origin',
-    headers: { ...(init?.body ? { 'content-type': 'application/json' } : {}), ...init?.headers },
+    headers: {
+      ...(init?.body ? { 'content-type': 'application/json' } : {}),
+      ...init?.headers,
+    },
   });
   if (response.status === 401) throw new Error('AUTH_REQUIRED');
   if (response.status === 403) throw new Error('ACCESS_DENIED');
-  const payload = (await response.json().catch(() => null)) as {
-    message?: unknown;
-    error?: unknown;
-  } | null;
   if (!response.ok) {
-    const detail = Array.isArray(payload?.message)
-      ? payload.message.join(' ')
-      : text(payload?.message);
-    throw new Error(detail || text(payload?.error) || 'No se pudo completar la solicitud.');
+    let invalidFields: string[] = [];
+    if (response.status === 400) {
+      const body = (await response.clone().json().catch(() => null)) as {
+        invalidFields?: unknown;
+      } | null;
+      if (Array.isArray(body?.invalidFields))
+        invalidFields = body.invalidFields.filter(
+          (field): field is string => typeof field === 'string',
+        );
+    }
+    throw new CrmApiError(response.status, kind, invalidFields);
   }
-  return payload as T;
+  return (await response.json().catch(() => null)) as T;
 }
 
 export function CrmWorkspace() {
   const router = useRouter();
   const [state, setState] = useState<ViewState>('checking');
   const [active, setActive] = useState<ModuleKey>('inquiries');
-  const [result, setResult] = useState<ListResult>({ items: [], page: 1, pageSize: 25, total: 0 });
+  const [result, setResult] = useState<ListResult>({
+    items: [],
+    page: 1,
+    pageSize: 25,
+    total: 0,
+  });
   const [lookups, setLookups] = useState<Lookups>({
     companies: [],
     opportunities: [],
@@ -171,11 +293,37 @@ export function CrmWorkspace() {
   const [contactOptions, setContactOptions] = useState<CrmRecord[]>([]);
   const [activityInquiryId, setActivityInquiryId] = useState('');
   const [formOpen, setFormOpen] = useState(false);
+  const [formDirty, setFormDirty] = useState(false);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
+  const [storageDisabled, setStorageDisabled] = useState(false);
   const [listLoading, setListLoading] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [menuOpen, setMenuOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+
+  useEffect(() => {
+    setSidebarCollapsed(
+      window.localStorage.getItem('safeguard-sidebar-collapsed') === 'true',
+    );
+  }, []);
+
+  useEffect(() => {
+    if (notice) {
+      const timer = window.setTimeout(() => setNotice(''), 4000);
+      return () => window.clearTimeout(timer);
+    }
+  }, [notice]);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key === 'Escape') setMenuOpen(false);
+    }
+    window.addEventListener('keydown', closeOnEscape);
+    return () => window.removeEventListener('keydown', closeOnEscape);
+  }, [menuOpen]);
 
   useEffect(() => {
     let activeRequest = true;
@@ -205,7 +353,10 @@ export function CrmWorkspace() {
           return;
         }
         const profile = (await response.json()) as { user?: { role?: string } };
-        if (profile.user?.role !== 'ADMIN' && profile.user?.role !== 'SUPER_ADMIN') {
+        if (
+          profile.user?.role !== 'ADMIN' &&
+          profile.user?.role !== 'SUPER_ADMIN'
+        ) {
           setState('denied');
           return;
         }
@@ -224,9 +375,21 @@ export function CrmWorkspace() {
     if (state !== 'ready') return;
     let activeRequest = true;
     void Promise.all([
-      crmRequest<ListResult>('companies?page=1&pageSize=100'),
-      crmRequest<ListResult>('opportunities?page=1&pageSize=100'),
-      crmRequest<ListResult>('inquiries?page=1&pageSize=100'),
+      crmRequest<ListResult>(
+        `companies?${buildCrmListQuery({ page: 1, module: 'companies' })}`,
+        undefined,
+        'list',
+      ),
+      crmRequest<ListResult>(
+        `opportunities?${buildCrmListQuery({ page: 1, module: 'opportunities' })}`,
+        undefined,
+        'list',
+      ),
+      crmRequest<ListResult>(
+        `inquiries?${buildCrmListQuery({ page: 1, module: 'inquiries' })}`,
+        undefined,
+        'list',
+      ),
       crmRequest<CrmRecord[]>('owners'),
     ])
       .then(([companies, opportunities, inquiries, owners]) => {
@@ -239,12 +402,7 @@ export function CrmWorkspace() {
           });
       })
       .catch((cause: unknown) => {
-        if (activeRequest) {
-          setError(
-            cause instanceof Error ? cause.message : 'No se pudieron cargar las referencias CRM.',
-          );
-          setState('error');
-        }
+        if (activeRequest) handleFailure(cause);
       });
     return () => {
       activeRequest = false;
@@ -254,7 +412,11 @@ export function CrmWorkspace() {
   useEffect(() => {
     if (active !== 'opportunities' || !selectedCompany) return;
     let activeRequest = true;
-    void crmRequest<ListResult>(`companies/${selectedCompany}/contacts?page=1&pageSize=100`)
+    void crmRequest<ListResult>(
+      `companies/${selectedCompany}/contacts?${buildCrmListQuery({ page: 1, module: 'contacts' })}`,
+      undefined,
+      'list',
+    )
       .then((result) => {
         if (activeRequest) setContactOptions(result.items);
       })
@@ -267,24 +429,25 @@ export function CrmWorkspace() {
   }, [active, selectedCompany]);
 
   const loadList = useCallback(async () => {
-    if (state !== 'ready') return;
+    if (state !== 'ready' || storageDisabled) return;
     setListLoading(true);
     setError('');
     setDetail(null);
-    const query = new URLSearchParams({ page: String(page), pageSize: '25' });
-    if (search.trim()) query.set('q', search.trim());
-    if (active === 'inquiries' && statusFilter) query.set('status', statusFilter);
-    if (active === 'companies' && companyCountryFilter.trim()) {
-      query.set('countryCode', companyCountryFilter.trim().toUpperCase());
-    }
-    if (active === 'inquiries') {
-      const [sortBy, sortDirection] = inquirySort.split(':');
-      query.set('sortBy', sortBy!);
-      query.set('sortDirection', sortDirection!);
-    }
+    const query = buildCrmListQuery({
+      page,
+      module: active,
+      search,
+      status: statusFilter,
+      countryCode: companyCountryFilter,
+      sort: inquirySort,
+    });
     if (active === 'contacts' && selectedCompany) {
       try {
-        const data = await crmRequest<ListResult>(`companies/${selectedCompany}/contacts?${query}`);
+        const data = await crmRequest<ListResult>(
+          `companies/${selectedCompany}/contacts?${query}`,
+          undefined,
+          'list',
+        );
         setResult(data);
       } catch (cause) {
         handleFailure(cause);
@@ -296,7 +459,11 @@ export function CrmWorkspace() {
     const path = active === 'contacts' ? 'companies' : active;
     if (active === 'contacts' && !selectedCompany) {
       try {
-        const data = await crmRequest<ListResult>(`companies?${query}`);
+        const data = await crmRequest<ListResult>(
+          `companies?${query}`,
+          undefined,
+          'list',
+        );
         setResult(data);
       } catch (cause) {
         handleFailure(cause);
@@ -306,7 +473,11 @@ export function CrmWorkspace() {
       return;
     }
     try {
-      const data = await crmRequest<ListResult>(`${path}?${query}`);
+      const data = await crmRequest<ListResult>(
+        `${path}?${query}`,
+        undefined,
+        'list',
+      );
       setResult(data);
     } catch (cause) {
       handleFailure(cause);
@@ -322,6 +493,7 @@ export function CrmWorkspace() {
     selectedCompany,
     state,
     statusFilter,
+    storageDisabled,
   ]);
 
   function handleFailure(cause: unknown) {
@@ -333,8 +505,19 @@ export function CrmWorkspace() {
       setState('denied');
       return;
     }
-    setError(cause instanceof Error ? cause.message : 'No se pudo completar la solicitud.');
-    setState('error');
+    setError(
+      cause instanceof Error
+        ? cause.message
+        : 'No se pudo completar la solicitud.',
+    );
+    if (cause instanceof CrmApiError && cause.status === 503) {
+      setStorageDisabled(true);
+      setState('ready');
+    } else if (cause instanceof CrmApiError && cause.status < 500) {
+      setState('ready');
+    } else {
+      setState('error');
+    }
   }
 
   useEffect(() => {
@@ -352,11 +535,26 @@ export function CrmWorkspace() {
     setCompanyCountryFilter('');
     setDetail(null);
     setFormOpen(false);
+    setFormDirty(false);
     setEditing(null);
     setError('');
     setNotice('');
     setSelectedCompany('');
     setActivityInquiryId('');
+  }
+
+  function closeForm() {
+    setFormOpen(false);
+    setFormDirty(false);
+    setEditing(null);
+  }
+
+  function toggleSidebar() {
+    setSidebarCollapsed((current) => {
+      const next = !current;
+      window.localStorage.setItem('safeguard-sidebar-collapsed', String(next));
+      return next;
+    });
   }
 
   async function openDetail(record: CrmRecord) {
@@ -372,7 +570,9 @@ export function CrmWorkspace() {
           setLinkOpportunityId(text(data.opportunityId));
           if (text(data.companyId)) {
             const contacts = await crmRequest<ListResult>(
-              `companies/${text(data.companyId)}/contacts?page=1&pageSize=100`,
+              `companies/${text(data.companyId)}/contacts?${buildCrmListQuery({ page: 1, module: 'contacts' })}`,
+              undefined,
+              'list',
             );
             setContactOptions(contacts.items);
           } else setContactOptions([]);
@@ -384,6 +584,32 @@ export function CrmWorkspace() {
   }
 
   async function submitForm(form: HTMLFormElement) {
+    if (busy || storageDisabled) return;
+    const invalid = Array.from(form.elements).filter(
+      (
+        element,
+      ): element is
+        HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement =>
+        (element instanceof HTMLInputElement ||
+          element instanceof HTMLSelectElement ||
+          element instanceof HTMLTextAreaElement) &&
+        !element.checkValidity(),
+    );
+    if (invalid.length) {
+      setFieldErrors(
+        Object.fromEntries(
+          invalid.map((field) => [
+            field.name,
+            field.validity.valueMissing
+              ? 'Este campo es obligatorio.'
+              : 'Revisa el formato de este campo.',
+          ]),
+        ),
+      );
+      invalid[0]?.focus();
+      return;
+    }
+    setFieldErrors({});
     setBusy(true);
     setError('');
     setNotice('');
@@ -393,16 +619,20 @@ export function CrmWorkspace() {
     );
     if (active === 'opportunities') {
       if (!editing) payload.companyId = selectedCompany;
-      if (payload.estimatedAmount) payload.estimatedAmount = Number(payload.estimatedAmount);
+      if (payload.estimatedAmount)
+        payload.estimatedAmount = Number(payload.estimatedAmount);
       if (payload.followUpAt)
         payload.followUpAt = new Date(String(payload.followUpAt)).toISOString();
     }
     if (active === 'inquiries') {
-      payload.quantity = payload.quantity ? Number(payload.quantity) : undefined;
+      payload.quantity = payload.quantity
+        ? Number(payload.quantity)
+        : undefined;
     }
     if (active === 'activities' && !editing) {
       payload.type = text(payload.type) || 'NOTE';
-      if (payload.taskDueAt) payload.taskDueAt = new Date(String(payload.taskDueAt)).toISOString();
+      if (payload.taskDueAt)
+        payload.taskDueAt = new Date(String(payload.taskDueAt)).toISOString();
       if (payload.type === 'TASK') payload.taskStatus = 'OPEN';
       for (const key of ['companyId', 'opportunityId', 'inquiryId'])
         if (!payload[key]) delete payload[key];
@@ -415,9 +645,13 @@ export function CrmWorkspace() {
         : active === 'contacts'
           ? `companies/${selectedCompany}/contacts`
           : active;
-      await crmRequest(path, { method: editing ? 'PATCH' : 'POST', body: JSON.stringify(payload) });
+      await crmRequest(path, {
+        method: editing ? 'PATCH' : 'POST',
+        body: JSON.stringify(payload),
+      });
       setNotice('Registro guardado. No se envió ningún correo.');
       setFormOpen(false);
+      setFormDirty(false);
       setEditing(null);
       await loadList();
     } catch (cause) {
@@ -441,7 +675,9 @@ export function CrmWorkspace() {
         }),
       });
       await openDetail(detail);
-      setNotice('Vínculos actualizados. El snapshot original permanece intacto.');
+      setNotice(
+        'Vínculos actualizados. El snapshot original permanece intacto.',
+      );
     } catch (cause) {
       handleFailure(cause);
     } finally {
@@ -459,7 +695,9 @@ export function CrmWorkspace() {
     }
     try {
       const contacts = await crmRequest<ListResult>(
-        `companies/${companyId}/contacts?page=1&pageSize=100`,
+        `companies/${companyId}/contacts?${buildCrmListQuery({ page: 1, module: 'contacts' })}`,
+        undefined,
+        'list',
       );
       setContactOptions(contacts.items);
     } catch (cause) {
@@ -472,6 +710,7 @@ export function CrmWorkspace() {
     setPage(1);
     setDetail(null);
     setFormOpen(true);
+    setFormDirty(false);
     setEditing(null);
     setActivityInquiryId(inquiryId);
     setError('');
@@ -482,7 +721,10 @@ export function CrmWorkspace() {
     setBusy(true);
     setError('');
     try {
-      await crmRequest(`inquiries/${id}`, { method: 'PATCH', body: JSON.stringify({ status }) });
+      await crmRequest(`inquiries/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status }),
+      });
       await loadList();
       setNotice('Estado actualizado.');
     } catch (cause) {
@@ -493,7 +735,11 @@ export function CrmWorkspace() {
   }
 
   async function archive(record: CrmRecord) {
-    if (!window.confirm('¿Archivar este registro? Se conservarán sus relaciones e historial.'))
+    if (
+      !window.confirm(
+        '¿Archivar este registro? Se conservarán sus relaciones e historial.',
+      )
+    )
       return;
     setBusy(true);
     setError('');
@@ -517,7 +763,8 @@ export function CrmWorkspace() {
         router.refresh();
       },
     );
-    if (!signedOut) setError('No se pudo cerrar la sesión. Inténtalo nuevamente.');
+    if (!signedOut)
+      setError('No se pudo cerrar la sesión. Inténtalo nuevamente.');
   }
 
   const fields = useMemo(() => fieldsFor(active), [active]);
@@ -534,7 +781,8 @@ export function CrmWorkspace() {
       <main className="mx-auto min-h-screen max-w-xl bg-canvas px-6 py-20 text-ink">
         <h1 className="text-2xl font-semibold">Acceso restringido</h1>
         <p className="mt-3 text-sm text-ink-muted">
-          Se requiere una cuenta interna activa con rol ADMIN.
+          Tu cuenta no tiene acceso a este panel. Contacta al administrador si
+          crees que se trata de un error.
         </p>
         <button
           className="mt-6 rounded-xl border border-line px-4 py-3"
@@ -547,40 +795,102 @@ export function CrmWorkspace() {
 
   return (
     <main className="min-h-screen bg-canvas text-ink">
-      <div className="mx-auto flex min-h-screen max-w-[1600px]">
-        <aside className="hidden w-64 shrink-0 flex-col border-r border-line bg-surface lg:flex">
-          <a href="/dashboard" className="flex h-20 items-center gap-3 border-b border-line px-6">
-            <span className="grid size-10 place-items-center rounded-xl bg-brand font-bold text-white">
-              S
-            </span>
-            <span className="font-semibold">SafeGuard</span>
-          </a>
-          <nav aria-label="CRM" className="flex-1 space-y-1 p-4">
-            <p className="px-3 pb-2 pt-4 text-xs font-semibold uppercase tracking-wider text-ink-muted">
-              Comercial interno
-            </p>
+      <div className="flex min-h-screen w-full">
+        <aside
+          className={`sticky top-0 hidden h-screen shrink-0 flex-col self-start overflow-y-auto border-r border-line bg-surface transition-[width] duration-200 motion-reduce:transition-none lg:flex ${sidebarCollapsed ? 'w-20' : 'w-64'}`}
+        >
+          <div
+            className={`flex h-20 items-center justify-between border-b border-line ${sidebarCollapsed ? 'px-1' : 'px-2'}`}
+          >
+            <Link
+              href="/dashboard"
+              aria-label="SafeGuard, panel principal"
+              className="flex min-w-0 items-center gap-3"
+            >
+              <span
+                className={`grid shrink-0 place-items-center rounded-xl bg-brand font-bold text-white ${sidebarCollapsed ? 'size-8' : 'size-10'}`}
+              >
+                S
+              </span>
+              {!sidebarCollapsed ? (
+                <span className="font-semibold">SafeGuard</span>
+              ) : null}
+            </Link>
+            <button
+              type="button"
+              onClick={toggleSidebar}
+              aria-expanded={!sidebarCollapsed}
+              aria-label={
+                sidebarCollapsed
+                  ? 'Expandir menú lateral'
+                  : 'Contraer menú lateral'
+              }
+              title={
+                sidebarCollapsed
+                  ? 'Expandir menú lateral'
+                  : 'Contraer menú lateral'
+              }
+              className={`grid shrink-0 place-items-center rounded-lg text-ink-muted hover:bg-surface-muted ${sidebarCollapsed ? 'size-8' : 'size-9'}`}
+            >
+              <svg
+                aria-hidden="true"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.8"
+                className="size-5"
+              >
+                <rect x="3" y="4" width="18" height="16" rx="2" />
+                <path d={sidebarCollapsed ? 'M9 4v16' : 'M8 4v16'} />
+              </svg>
+            </button>
+          </div>
+          <nav
+            aria-label="Navegación principal"
+            className="flex-1 space-y-1 p-3"
+          >
+            {!sidebarCollapsed ? (
+              <p className="px-3 pb-2 pt-4 text-xs font-semibold uppercase tracking-wider text-ink-muted">
+                Comercial interno
+              </p>
+            ) : null}
             {modules.map((item) => (
               <button
                 key={item.id}
                 aria-current={active === item.id ? 'page' : undefined}
+                aria-label={item.label}
+                title={item.label}
                 onClick={() => selectModule(item.id)}
-                className={`flex min-h-11 w-full items-center rounded-lg px-3 text-left text-sm ${active === item.id ? 'bg-accent font-semibold text-brand-strong dark:text-brand' : 'text-ink-muted hover:bg-surface-muted'}`}
+                className={`flex min-h-11 w-full items-center gap-3 rounded-lg ${sidebarCollapsed ? 'justify-center px-2' : 'px-3'} text-left text-sm ${active === item.id ? 'bg-accent font-semibold text-brand-strong dark:text-brand' : 'text-ink-muted hover:bg-surface-muted'}`}
               >
-                {item.label}
+                <NavIcon name={item.id} />
+                {!sidebarCollapsed ? <span>{item.label}</span> : null}
               </button>
             ))}
-            <a
+            {!sidebarCollapsed ? (
+              <p className="px-3 pb-2 pt-6 text-xs font-semibold uppercase tracking-wider text-ink-muted">
+                Cuenta
+              </p>
+            ) : null}
+            <Link
               href="/dashboard"
-              className="mt-5 flex min-h-11 items-center rounded-lg px-3 text-sm text-ink-muted hover:bg-surface-muted"
+              title="Resumen"
+              aria-label="Resumen"
+              aria-current="page"
+              className={`flex min-h-11 items-center gap-3 rounded-lg text-left text-sm ${sidebarCollapsed ? 'justify-center px-2' : 'px-3'} bg-accent font-semibold text-brand-strong dark:text-brand`}
             >
-              Resumen
-            </a>
-            <a
+              <NavIcon name="home" />
+              {!sidebarCollapsed ? <span>Resumen</span> : null}
+            </Link>
+            <Link
               href="/dashboard/settings/security"
-              className="flex min-h-11 items-center rounded-lg px-3 text-sm text-ink-muted hover:bg-surface-muted"
+              title="Ajustes · Seguridad"
+              aria-label="Ajustes · Seguridad"
+              className={`flex min-h-11 items-center gap-3 rounded-lg text-left text-sm ${sidebarCollapsed ? 'justify-center px-2' : 'px-3'} text-ink-muted hover:bg-surface-muted`}
             >
-              Ajustes · Seguridad
-            </a>
+              <NavIcon name="settings" />
+              {!sidebarCollapsed ? <span>Ajustes · Seguridad</span> : null}
+            </Link>
           </nav>
         </aside>
         <section className="min-w-0 flex-1">
@@ -588,14 +898,16 @@ export function CrmWorkspace() {
             <div className="flex items-center gap-3">
               <button
                 aria-expanded={menuOpen}
-                aria-label="Abrir menú"
+                aria-label={menuOpen ? 'Cerrar menú' : 'Abrir menú'}
                 className="rounded-lg border border-line px-3 py-2 lg:hidden"
-                onClick={() => setMenuOpen(!menuOpen)}
+                onClick={() => setMenuOpen((open) => !open)}
               >
-                ☰
+                {menuOpen ? '×' : '☰'}
               </button>
               <div>
-                <p className="text-xs text-ink-muted">SafeGuard · CRM interno</p>
+                <p className="text-xs text-ink-muted">
+                  SafeGuard · CRM interno
+                </p>
                 <h1 className="text-lg font-semibold">{activeModule.label}</h1>
               </div>
             </div>
@@ -609,51 +921,132 @@ export function CrmWorkspace() {
               </button>
             </div>
           </header>
-          {menuOpen ? (
-            <nav className="grid gap-1 border-b border-line bg-surface p-3 lg:hidden">
-              {modules.map((item) => (
-                <button
-                  key={item.id}
-                  onClick={() => {
-                    selectModule(item.id);
-                    setMenuOpen(false);
-                  }}
-                  className="rounded-lg px-3 py-3 text-left text-sm"
+          <nav
+            aria-label="Ruta de navegación"
+            className="mx-auto w-full max-w-[1600px] px-4 pt-4 text-sm text-ink-muted sm:px-7 lg:px-10"
+          >
+            <ol className="flex flex-wrap items-center gap-2">
+              <li>
+                <Link
+                  className="underline underline-offset-4"
+                  href="/dashboard"
                 >
-                  {item.label}
-                </button>
-              ))}
-              <a className="rounded-lg px-3 py-3 text-sm" href="/dashboard/settings/security">
-                Ajustes · Seguridad
-              </a>
-            </nav>
+                  Panel
+                </Link>
+              </li>
+              <li aria-hidden="true">/</li>
+              <li>
+                <Link
+                  className="underline underline-offset-4"
+                  href="/dashboard"
+                >
+                  Comercial
+                </Link>
+              </li>
+              <li aria-hidden="true">/</li>
+              <li aria-current="page" className="text-ink">
+                {activeModule.label}
+              </li>
+            </ol>
+          </nav>
+          {menuOpen ? (
+            <div
+              className="fixed inset-0 z-40 bg-slate-950/50 lg:hidden"
+              onClick={() => setMenuOpen(false)}
+            >
+              <nav
+                aria-label="Navegación principal"
+                className="h-full w-[min(20rem,85vw)] overflow-y-auto border-r border-line bg-surface p-4 shadow-xl"
+                onClick={(event) => event.stopPropagation()}
+                onKeyDown={(event) => {
+                  if (event.key === 'Escape') setMenuOpen(false);
+                }}
+              >
+                <div className="mb-5 flex items-center justify-between">
+                  <span className="font-semibold">SafeGuard</span>
+                  <button
+                    type="button"
+                    aria-label="Cerrar menú"
+                    onClick={() => setMenuOpen(false)}
+                    className="size-10 rounded-lg border border-line"
+                  >
+                    ×
+                  </button>
+                </div>
+                {modules.map((item) => (
+                  <button
+                    key={item.id}
+                    aria-current={active === item.id ? 'page' : undefined}
+                    onClick={() => {
+                      selectModule(item.id);
+                      setMenuOpen(false);
+                    }}
+                    className={`flex min-h-12 w-full items-center gap-3 rounded-lg px-3 text-left ${active === item.id ? 'bg-accent font-semibold text-brand-strong dark:text-brand' : 'text-ink-muted hover:bg-surface-muted'}`}
+                  >
+                    <NavIcon name={item.id} />
+                    {item.label}
+                  </button>
+                ))}
+                <p className="px-3 pb-2 pt-5 text-xs font-semibold uppercase tracking-wider text-ink-muted">
+                  Cuenta
+                </p>
+                <Link
+                  aria-current="page"
+                  className="flex min-h-12 items-center gap-3 rounded-lg bg-accent px-3 font-semibold text-brand-strong dark:text-brand"
+                  href="/dashboard"
+                  onClick={() => setMenuOpen(false)}
+                >
+                  <NavIcon name="home" />
+                  Resumen
+                </Link>
+                <Link
+                  className="flex min-h-12 items-center gap-3 rounded-lg px-3 text-ink-muted hover:bg-surface-muted"
+                  href="/dashboard/settings/security"
+                  onClick={() => setMenuOpen(false)}
+                >
+                  <NavIcon name="settings" />
+                  Ajustes · Seguridad
+                </Link>
+              </nav>
+            </div>
           ) : null}
-          <div className="p-4 sm:p-7 lg:p-10">
+          <div className="mx-auto w-full max-w-[1600px] p-4 sm:p-7 lg:p-10">
             <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
               <div>
-                <p className="text-sm font-semibold text-brand">Operaciones comerciales</p>
-                <h2 className="mt-1 text-2xl font-semibold">{activeModule.label}</h2>
-                <p className="mt-2 text-sm text-ink-muted">{activeModule.description}</p>
+                <p className="text-sm font-semibold text-brand">
+                  Operaciones comerciales
+                </p>
+                <h2 className="mt-1 text-2xl font-semibold">
+                  {activeModule.label}
+                </h2>
+                <p className="mt-2 text-sm text-ink-muted">
+                  {activeModule.description}
+                </p>
               </div>
               <button
+                disabled={storageDisabled}
                 onClick={() => {
-                  setFormOpen(!formOpen);
-                  setDetail(null);
-                  setEditing(null);
-                  setError('');
+                  if (formOpen) closeForm();
+                  else {
+                    setFormOpen(true);
+                    setFormDirty(false);
+                    setDetail(null);
+                    setEditing(null);
+                    setError('');
+                  }
                 }}
-                className="min-h-11 rounded-xl bg-brand px-4 text-sm font-semibold text-white"
+                className="min-h-11 rounded-xl bg-brand px-4 text-sm font-semibold text-white dark:text-slate-950 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 Nuevo registro
               </button>
             </div>
-            {error ? (
+            {error && !storageDisabled ? (
               <div
                 role="alert"
                 className="mb-4 rounded-xl border border-danger/30 bg-danger/10 p-4 text-sm text-danger"
               >
                 {error}{' '}
-                {state === 'error' ? (
+                {state === 'error' && !storageDisabled ? (
                   <button
                     className="ml-2 underline"
                     onClick={() => {
@@ -666,9 +1059,19 @@ export function CrmWorkspace() {
                 ) : null}
               </div>
             ) : null}
+            {storageDisabled ? (
+              <div
+                role="status"
+                className="mb-4 rounded-xl border border-line bg-surface-muted p-4 text-sm text-ink"
+              >
+                El almacenamiento del CRM aún no está habilitado. No se pueden
+                crear ni modificar registros.
+              </div>
+            ) : null}
             {notice ? (
               <p
                 role="status"
+                aria-live="polite"
                 className="mb-4 rounded-xl border border-line bg-surface p-3 text-sm"
               >
                 {notice}
@@ -685,7 +1088,9 @@ export function CrmWorkspace() {
                     setPage(1);
                   }}
                 >
-                  <option value="">Selecciona una empresa para ver sus contactos</option>
+                  <option value="">
+                    Selecciona una empresa para ver sus contactos
+                  </option>
                   {lookups.companies.map((company) => (
                     <option key={company.id} value={company.id}>
                       {text(company.name)}
@@ -694,9 +1099,32 @@ export function CrmWorkspace() {
                 </select>
               </label>
             ) : null}
-            {formOpen ? (
+            <DialogModal
+              id="crm-record-form"
+              title={`${editing ? 'Editar' : 'Crear'} ${activeModule.label.toLowerCase()}`}
+              isOpen={formOpen}
+              isDirty={formDirty}
+              onClose={closeForm}
+            >
               <form
-                className="mb-6 grid gap-4 rounded-2xl border border-line bg-surface p-5 sm:grid-cols-2"
+                noValidate
+                className="grid max-h-[70vh] gap-4 overflow-y-auto p-1 sm:grid-cols-2"
+                onChange={(event) => {
+                  setFormDirty(true);
+                  const field = event.target;
+                  if (
+                    field instanceof HTMLInputElement ||
+                    field instanceof HTMLSelectElement ||
+                    field instanceof HTMLTextAreaElement
+                  ) {
+                    setFieldErrors((current) => {
+                      if (!(field.name in current)) return current;
+                      const next = { ...current };
+                      delete next[field.name];
+                      return next;
+                    });
+                  }
+                }}
                 onSubmit={(event) => {
                   event.preventDefault();
                   void submitForm(event.currentTarget);
@@ -714,7 +1142,15 @@ export function CrmWorkspace() {
                       name="companyId"
                       required
                       value={selectedCompany}
-                      onChange={(event) => setSelectedCompany(event.target.value)}
+                      onChange={(event) =>
+                        setSelectedCompany(event.target.value)
+                      }
+                      aria-invalid={Boolean(fieldErrors.companyId)}
+                      aria-describedby={
+                        fieldErrors.companyId
+                          ? 'crm-error-companyId'
+                          : undefined
+                      }
                       className="mt-1 min-h-11 w-full rounded-lg border border-line bg-canvas px-3"
                     >
                       <option value="">Seleccionar empresa</option>
@@ -724,6 +1160,15 @@ export function CrmWorkspace() {
                         </option>
                       ))}
                     </select>
+                    {fieldErrors.companyId ? (
+                      <span
+                        id="crm-error-companyId"
+                        className="mt-1 block text-xs text-danger"
+                        role="alert"
+                      >
+                        {fieldErrors.companyId}
+                      </span>
+                    ) : null}
                   </label>
                 ) : null}
                 {active === 'opportunities' ? (
@@ -735,7 +1180,7 @@ export function CrmWorkspace() {
                     >
                       {opportunityStages.map((stage) => (
                         <option key={stage} value={stage}>
-                          {stage}
+                          {statusLabels[stage] ?? stage}
                         </option>
                       ))}
                     </select>
@@ -808,7 +1253,7 @@ export function CrmWorkspace() {
                       name="locale"
                       className="mt-1 min-h-11 w-full rounded-lg border border-line bg-canvas px-3"
                     >
-                      <option value="EN">English</option>
+                      <option value="EN">Inglés</option>
                       <option value="ES">Español</option>
                     </select>
                   </label>
@@ -824,7 +1269,9 @@ export function CrmWorkspace() {
                       <option value="">Sin contacto</option>
                       {contactOptions.map((item) => (
                         <option key={item.id} value={item.id}>
-                          {[text(item.firstName), text(item.lastName)].filter(Boolean).join(' ')}
+                          {[text(item.firstName), text(item.lastName)]
+                            .filter(Boolean)
+                            .join(' ')}
                         </option>
                       ))}
                     </select>
@@ -902,23 +1349,50 @@ export function CrmWorkspace() {
                     {field.label}
                     {field.type === 'textarea' ? (
                       <textarea
+                        data-dialog-autofocus={
+                          field.required ? true : undefined
+                        }
+                        id={`crm-field-${field.name}`}
                         name={field.name}
                         required={field.required}
                         maxLength={field.maxLength}
+                        aria-invalid={Boolean(fieldErrors[field.name])}
+                        aria-describedby={
+                          fieldErrors[field.name]
+                            ? `crm-error-${field.name}`
+                            : undefined
+                        }
                         defaultValue={text(editing?.[field.name])}
                         className="mt-1 min-h-28 w-full rounded-lg border border-line bg-canvas p-3"
                       />
                     ) : (
                       <input
+                        data-dialog-autofocus
+                        id={`crm-field-${field.name}`}
                         name={field.name}
                         type={field.type ?? 'text'}
                         required={field.required}
                         maxLength={field.maxLength}
+                        aria-invalid={Boolean(fieldErrors[field.name])}
+                        aria-describedby={
+                          fieldErrors[field.name]
+                            ? `crm-error-${field.name}`
+                            : undefined
+                        }
                         step={field.type === 'number' ? 'any' : undefined}
                         defaultValue={text(editing?.[field.name])}
                         className="mt-1 min-h-11 w-full rounded-lg border border-line bg-canvas px-3"
                       />
                     )}
+                    {fieldErrors[field.name] ? (
+                      <span
+                        id={`crm-error-${field.name}`}
+                        className="mt-1 block text-xs text-danger"
+                        role="alert"
+                      >
+                        {fieldErrors[field.name]}
+                      </span>
+                    ) : null}
                   </label>
                 ))}
                 <div className="flex gap-2 sm:col-span-2">
@@ -926,25 +1400,28 @@ export function CrmWorkspace() {
                     disabled={
                       busy ||
                       (active === 'contacts' && !selectedCompany && !editing) ||
-                      (active === 'opportunities' && !selectedCompany && !editing)
+                      (active === 'opportunities' &&
+                        !selectedCompany &&
+                        !editing)
                     }
-                    className="min-h-11 rounded-lg bg-brand px-4 text-sm font-semibold text-white disabled:opacity-50"
+                    className="min-h-11 rounded-lg bg-brand px-4 text-sm font-semibold text-white dark:text-slate-950 disabled:opacity-50"
                   >
-                    {busy ? 'Guardando…' : editing ? 'Guardar cambios' : 'Guardar'}
+                    {busy
+                      ? 'Guardando…'
+                      : editing
+                        ? 'Guardar cambios'
+                        : 'Guardar'}
                   </button>
                   <button
                     type="button"
-                    onClick={() => {
-                      setFormOpen(false);
-                      setEditing(null);
-                    }}
+                    onClick={closeForm}
                     className="min-h-11 rounded-lg border border-line px-4 text-sm"
                   >
                     Cancelar
                   </button>
                 </div>
               </form>
-            ) : null}
+            </DialogModal>
             <section className="rounded-2xl border border-line bg-surface">
               <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line p-4">
                 <label className="sr-only" htmlFor="crm-search">
@@ -953,6 +1430,7 @@ export function CrmWorkspace() {
                 <input
                   id="crm-search"
                   value={search}
+                  maxLength={120}
                   onChange={(event) => {
                     setSearch(event.target.value);
                     setPage(1);
@@ -969,7 +1447,9 @@ export function CrmWorkspace() {
                       id="company-country-filter"
                       value={companyCountryFilter}
                       onChange={(event) => {
-                        setCompanyCountryFilter(event.target.value.slice(0, 2).toUpperCase());
+                        setCompanyCountryFilter(
+                          event.target.value.slice(0, 2).toUpperCase(),
+                        );
                         setPage(1);
                       }}
                       placeholder="País (ej. US)"
@@ -995,7 +1475,9 @@ export function CrmWorkspace() {
                     >
                       <option value="">Todos los estados</option>
                       {inquiryStatuses.map((status) => (
-                        <option key={status}>{status}</option>
+                        <option key={status} value={status}>
+                          {statusLabels[status] ?? status}
+                        </option>
                       ))}
                     </select>
                     <label className="sr-only" htmlFor="inquiry-sort">
@@ -1018,12 +1500,29 @@ export function CrmWorkspace() {
                     </select>
                   </>
                 ) : null}
-                <span className="text-xs text-ink-muted">{result.total} registros</span>
+                <span className="text-xs text-ink-muted">
+                  {result.total} registros
+                </span>
               </div>
               {listLoading ? (
-                <p role="status" className="p-4 text-sm text-ink-muted">
-                  Cargando registros…
-                </p>
+                <div
+                  role="status"
+                  aria-label="Cargando registros"
+                  className="space-y-3 p-4"
+                >
+                  <span className="sr-only">Cargando registros…</span>
+                  {[0, 1, 2, 3].map((row) => (
+                    <div
+                      key={row}
+                      className="grid grid-cols-3 gap-4"
+                      aria-hidden="true"
+                    >
+                      <span className="skeleton h-4 rounded" />
+                      <span className="skeleton h-4 rounded" />
+                      <span className="skeleton h-4 rounded" />
+                    </div>
+                  ))}
+                </div>
               ) : active === 'contacts' && !selectedCompany ? (
                 <div className="p-8 text-sm text-ink-muted">
                   Selecciona una empresa para consultar contactos.
@@ -1032,9 +1531,23 @@ export function CrmWorkspace() {
                 <div className="p-10 text-center">
                   <h3 className="font-semibold">Sin registros</h3>
                   <p className="mt-2 text-sm text-ink-muted">
-                    No hay datos que mostrar. Crea el primer registro cuando el almacenamiento CRM
-                    esté habilitado.
+                    {storageDisabled
+                      ? 'No hay registros disponibles mientras el almacenamiento esté deshabilitado.'
+                      : 'No hay datos que mostrar. Puedes crear el primer registro.'}
                   </p>
+                  {!storageDisabled ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setFormOpen(true);
+                        setFormDirty(false);
+                        setEditing(null);
+                      }}
+                      className="mt-5 min-h-11 rounded-xl bg-brand px-4 text-sm font-semibold text-white dark:text-slate-950"
+                    >
+                      Crear {activeModule.label.toLowerCase()}
+                    </button>
+                  ) : null}
                 </div>
               ) : (
                 <div className="overflow-x-auto">
@@ -1060,7 +1573,9 @@ export function CrmWorkspace() {
                               {labelFor(record, active)}
                             </button>
                             <p className="mt-1 max-w-xl truncate text-xs text-ink-muted">
-                              {text(record.email) || text(record.message) || text(record.industry)}
+                              {text(record.email) ||
+                                text(record.message) ||
+                                text(record.industry)}
                             </p>
                           </td>
                           <td className="px-4 py-4">
@@ -1070,12 +1585,17 @@ export function CrmWorkspace() {
                                 disabled={busy}
                                 value={text(record.status)}
                                 onChange={(event) =>
-                                  void updateStatus(record.id, event.target.value)
+                                  void updateStatus(
+                                    record.id,
+                                    event.target.value,
+                                  )
                                 }
                                 className="rounded-lg border border-line bg-canvas px-2 py-2"
                               >
                                 {inquiryStatuses.map((status) => (
-                                  <option key={status}>{status}</option>
+                                  <option key={status} value={status}>
+                                    {statusLabels[status] ?? status}
+                                  </option>
                                 ))}
                               </select>
                             ) : active === 'opportunities' ? (
@@ -1083,40 +1603,58 @@ export function CrmWorkspace() {
                                 aria-label="Etapa de oportunidad"
                                 value={text(record.stage)}
                                 onChange={(event) =>
-                                  void crmRequest(`opportunities/${record.id}`, {
-                                    method: 'PATCH',
-                                    body: JSON.stringify({ stage: event.target.value }),
-                                  })
-                                    .then(() => loadList())
+                                  void crmRequest(
+                                    `opportunities/${record.id}`,
+                                    {
+                                      method: 'PATCH',
+                                      body: JSON.stringify({
+                                        stage: event.target.value,
+                                      }),
+                                    },
+                                  )
+                                    .then(() => {
+                                      setNotice('Oportunidad actualizada.');
+                                      return loadList();
+                                    })
                                     .catch(handleFailure)
                                 }
                                 className="rounded-lg border border-line bg-canvas px-2 py-2"
                               >
                                 {opportunityStages.map((stage) => (
-                                  <option key={stage}>{stage}</option>
+                                  <option key={stage} value={stage}>
+                                    {statusLabels[stage] ?? stage}
+                                  </option>
                                 ))}
                               </select>
-                            ) : active === 'activities' && record.type === 'TASK' ? (
+                            ) : active === 'activities' &&
+                              record.type === 'TASK' ? (
                               <select
                                 aria-label="Estado de tarea"
                                 value={text(record.taskStatus)}
                                 onChange={(event) =>
                                   void crmRequest(`activities/${record.id}`, {
                                     method: 'PATCH',
-                                    body: JSON.stringify({ taskStatus: event.target.value }),
+                                    body: JSON.stringify({
+                                      taskStatus: event.target.value,
+                                    }),
                                   })
-                                    .then(() => loadList())
+                                    .then(() => {
+                                      setNotice('Tarea actualizada.');
+                                      return loadList();
+                                    })
                                     .catch(handleFailure)
                                 }
                                 className="rounded-lg border border-line bg-canvas px-2 py-2"
                               >
-                                <option>OPEN</option>
-                                <option>COMPLETED</option>
-                                <option>CANCELED</option>
+                                <option value="OPEN">Abierta</option>
+                                <option value="COMPLETED">Completada</option>
+                                <option value="CANCELED">Cancelada</option>
                               </select>
                             ) : (
                               <span>
-                                {text(record.stage) ||
+                                {statusLabels[text(record.stage)] ||
+                                  text(record.stage) ||
+                                  statusLabels[text(record.type)] ||
                                   text(record.type) ||
                                   text(record.countryCode) ||
                                   '—'}
@@ -1125,13 +1663,21 @@ export function CrmWorkspace() {
                           </td>
                           <td className="px-4 py-4 text-ink-muted">
                             {text(record.updatedAt)
-                              ? new Date(text(record.updatedAt)).toLocaleDateString()
+                              ? new Date(
+                                  text(record.updatedAt),
+                                ).toLocaleDateString()
                               : text(record.createdAt)
-                                ? new Date(text(record.createdAt)).toLocaleDateString()
+                                ? new Date(
+                                    text(record.createdAt),
+                                  ).toLocaleDateString()
                                 : '—'}
                           </td>
                           <td className="px-4 py-4">
-                            {['companies', 'contacts', 'opportunities'].includes(active) ? (
+                            {[
+                              'companies',
+                              'contacts',
+                              'opportunities',
+                            ].includes(active) ? (
                               <button
                                 onClick={() => void archive(record)}
                                 disabled={busy}
@@ -1178,7 +1724,9 @@ export function CrmWorkspace() {
                     <p className="text-xs font-semibold uppercase tracking-wider text-brand">
                       Detalle
                     </p>
-                    <h3 className="mt-1 text-xl font-semibold">{labelFor(detail, active)}</h3>
+                    <h3 className="mt-1 text-xl font-semibold">
+                      {labelFor(detail, active)}
+                    </h3>
                   </div>
                   <button
                     onClick={() => setDetail(null)}
@@ -1202,7 +1750,8 @@ export function CrmWorkspace() {
                           'author',
                           'updatedAt',
                         ].includes(key) &&
-                        (typeof value === 'string' || typeof value === 'number'),
+                        (typeof value === 'string' ||
+                          typeof value === 'number'),
                     )
                     .map(([key, value]) => (
                       <div key={key} className="rounded-lg bg-canvas p-3">
@@ -1225,14 +1774,17 @@ export function CrmWorkspace() {
                 {active === 'inquiries' ? (
                   <>
                     <p className="mt-3 text-sm text-ink-muted">
-                      Vincular registros conserva intacto el snapshot original de la solicitud.
+                      Vincular registros conserva intacto el snapshot original
+                      de la solicitud.
                     </p>
                     <div className="mt-4 grid gap-3 sm:grid-cols-3">
                       <label className="text-sm">
                         Empresa
                         <select
                           value={linkCompanyId}
-                          onChange={(event) => void changeLinkCompany(event.target.value)}
+                          onChange={(event) =>
+                            void changeLinkCompany(event.target.value)
+                          }
                           className="mt-1 min-h-11 w-full rounded-lg border border-line bg-canvas px-3"
                         >
                           <option value="">Sin vincular</option>
@@ -1247,7 +1799,9 @@ export function CrmWorkspace() {
                         Contacto
                         <select
                           value={linkContactId}
-                          onChange={(event) => setLinkContactId(event.target.value)}
+                          onChange={(event) =>
+                            setLinkContactId(event.target.value)
+                          }
                           disabled={!linkCompanyId}
                           className="mt-1 min-h-11 w-full rounded-lg border border-line bg-canvas px-3"
                         >
@@ -1265,7 +1819,9 @@ export function CrmWorkspace() {
                         Oportunidad
                         <select
                           value={linkOpportunityId}
-                          onChange={(event) => setLinkOpportunityId(event.target.value)}
+                          onChange={(event) =>
+                            setLinkOpportunityId(event.target.value)
+                          }
                           disabled={!linkCompanyId}
                           className="mt-1 min-h-11 w-full rounded-lg border border-line bg-canvas px-3"
                         >
@@ -1273,8 +1829,9 @@ export function CrmWorkspace() {
                           {lookups.opportunities
                             .filter(
                               (item) =>
-                                (item.company as { id?: string } | undefined)?.id ===
-                                  linkCompanyId || item.companyId === linkCompanyId,
+                                (item.company as { id?: string } | undefined)
+                                  ?.id === linkCompanyId ||
+                                item.companyId === linkCompanyId,
                             )
                             .map((item) => (
                               <option key={item.id} value={item.id}>
@@ -1316,7 +1873,9 @@ export function CrmWorkspace() {
                     </ul>
                   </div>
                 ) : null}
-                {active === 'companies' || active === 'contacts' || active === 'opportunities' ? (
+                {active === 'companies' ||
+                active === 'contacts' ||
+                active === 'opportunities' ? (
                   <button
                     onClick={() => {
                       setEditing(detail);
@@ -1331,15 +1890,15 @@ export function CrmWorkspace() {
                 ) : null}
                 {text(detail.email) ? (
                   <p className="mt-4 text-xs text-ink-muted">
-                    El correo abre tu aplicación mediante mailto. SafeGuard no envía ni registra el
-                    envío.
+                    El correo abre tu aplicación mediante mailto. SafeGuard no
+                    envía ni registra el envío.
                   </p>
                 ) : null}
               </section>
             ) : null}
             <footer className="mt-8 border-t border-line pt-5 text-xs text-ink-muted">
-              CRM interno SafeGuard · almacenamiento sujeto a migración aditiva pendiente de
-              aprobación. Sin actividad ficticia ni datos de demostración.
+              CRM interno SafeGuard · sin actividad ficticia ni datos de
+              demostración.
             </footer>
           </div>
         </section>

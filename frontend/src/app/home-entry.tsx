@@ -108,11 +108,17 @@ export function HomeEntry() {
   return (
     <main className="min-h-screen bg-canvas px-5 py-6 text-ink sm:px-8">
       <header className="mx-auto flex w-full max-w-6xl items-center justify-between">
-        <a aria-label="SafeGuard, inicio" className="flex items-center gap-3" href="/">
+        <a
+          aria-label="SafeGuard, inicio"
+          className="flex items-center gap-3"
+          href="/"
+        >
           <span className="grid size-11 place-items-center rounded-xl bg-brand text-lg font-bold text-white dark:text-slate-950">
             S
           </span>
-          <span className="text-lg font-semibold tracking-tight">SafeGuard</span>
+          <span className="text-lg font-semibold tracking-tight">
+            SafeGuard
+          </span>
         </a>
         <ThemeToggle />
       </header>
@@ -133,8 +139,8 @@ export function HomeEntry() {
               Comprobando tu acceso
             </h1>
             <p className="mt-3 text-sm leading-6 text-ink-muted">
-              SafeGuard validará la sesión y los permisos con el servicio interno antes de mostrar
-              el panel.
+              SafeGuard validará la sesión y los permisos con el servicio
+              interno antes de mostrar el panel.
             </p>
             <span
               aria-hidden="true"
@@ -160,15 +166,16 @@ export function HomeEntry() {
               No se confirmó un permiso administrativo
             </h1>
             <p className="mt-3 text-sm leading-6 text-ink-muted">
-              La sesión por sí sola no concede acceso empresarial. El servicio interno requiere una
-              identidad vinculada y activa con rol ADMIN.
+              Tu cuenta no tiene acceso a este panel. Si crees que se trata de
+              un error, contacta al administrador.
             </p>
             {signOutError ? (
               <p
                 className="mt-5 rounded-xl border border-danger/30 bg-danger/10 p-3 text-sm text-danger"
                 role="alert"
               >
-                No se pudo cerrar la sesión. Comprueba la conexión e inténtalo nuevamente.
+                No se pudo cerrar la sesión. Comprueba la conexión e inténtalo
+                nuevamente.
               </p>
             ) : null}
             <button
@@ -191,8 +198,8 @@ export function HomeEntry() {
               No se pudo comprobar el acceso
             </h1>
             <p className="mt-3 text-sm leading-6 text-ink-muted">
-              El servicio de autenticación o autorización no respondió correctamente. No se muestra
-              información protegida.
+              El servicio de autenticación o autorización no respondió
+              correctamente. No se muestra información protegida.
             </p>
             <button
               className="mt-7 min-h-11 rounded-xl bg-brand px-4 text-sm font-semibold text-white transition hover:bg-brand-strong dark:text-slate-950"
@@ -206,8 +213,8 @@ export function HomeEntry() {
       </section>
 
       <p className="mx-auto mt-8 max-w-xl text-center text-xs leading-5 text-ink-muted">
-        SafeGuard · Acceso limitado a identidades autorizadas. Las funciones comerciales aún no
-        están habilitadas.
+        SafeGuard · Acceso limitado a identidades autorizadas. Las funciones
+        comerciales aún no están habilitadas.
       </p>
     </main>
   );

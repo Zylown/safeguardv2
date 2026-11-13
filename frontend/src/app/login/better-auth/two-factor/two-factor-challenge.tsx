@@ -17,11 +17,13 @@ export function TwoFactorChallenge() {
     setPending(true);
     const data = new FormData(event.currentTarget);
     const code = String(data.get('code') ?? '').replace(/\s/g, '');
-    if (recoveryMode ? code.length < 8 || code.length > 64 : !/^\d{6}$/.test(code)) {
+    if (
+      recoveryMode ? code.length < 8 || code.length > 64 : !/^\d{6}$/.test(code)
+    ) {
       setError(
         recoveryMode
           ? 'Ingresa un código de recuperación válido.'
-          : 'Ingresa el código de seis dígitos de tu Authenticator.',
+          : 'Ingresa el código de seis dígitos de tu aplicación de autenticación.',
       );
       setPending(false);
       return;
@@ -55,12 +57,14 @@ export function TwoFactorChallenge() {
           <ThemeToggle />
         </header>
         <section className="mt-14 rounded-3xl border border-line bg-surface p-7 shadow-sm sm:p-9">
-          <p className="text-xs font-bold uppercase tracking-[0.16em] text-brand">Segundo factor</p>
+          <p className="text-xs font-bold uppercase tracking-[0.16em] text-brand">
+            Segundo factor
+          </p>
           <h1 className="mt-2 text-2xl font-semibold">Verifica tu identidad</h1>
           <p className="mt-3 text-sm leading-6 text-ink-muted">
             {recoveryMode
               ? 'Ingresa uno de tus códigos de recuperación. El código se invalida al usarlo.'
-              : 'Ingresa el código actual de seis dígitos de tu aplicación Authenticator.'}
+              : 'Ingresa el código actual de seis dígitos de tu aplicación de autenticación.'}
           </p>
           <form className="mt-7 space-y-5" onSubmit={submit}>
             <label className="block text-sm font-medium" htmlFor="totp-code">
@@ -100,7 +104,9 @@ export function TwoFactorChallenge() {
               }}
               type="button"
             >
-              {recoveryMode ? 'Usar Authenticator' : 'Usar código de recuperación'}
+              {recoveryMode
+                ? 'Usar aplicación de autenticación'
+                : 'Usar código de recuperación'}
             </button>
           </form>
         </section>

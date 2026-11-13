@@ -4,10 +4,12 @@ import './globals.css';
 
 export const metadata: Metadata = {
   title: 'SafeGuard',
-  description: 'Internal SafeGuard operations panel.',
+  description: 'Panel interno de operaciones de SafeGuard.',
 };
 
-export default function RootLayout({ children }: Readonly<{ children: ReactNode }>) {
+export default function RootLayout({
+  children,
+}: Readonly<{ children: ReactNode }>) {
   return (
     <html lang="es" data-theme="light" suppressHydrationWarning>
       <head>

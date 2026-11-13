@@ -146,3 +146,29 @@ test('CRM BFF restricts routes/methods, bounds bodies and supports internal PATC
   assert.equal(deleted.status, 200);
   assert.equal(calls, 2);
 });
+
+test('CRM BFF forwards only recognized validation field names and never field values', async () => {
+  globalThis.fetch = async () =>
+    Response.json(
+      {
+        statusCode: 400,
+        message: [
+          'pageSize must not be greater than 100',
+          'status must be one of the following values: NEW, REVIEWING, CONTACTED, CLOSED',
+        ],
+        value: 'sensitive input that must not pass through',
+      },
+      { status: 400 },
+    );
+  const response = await GET(
+    new Request('http://localhost:3000/api/backend/crm/inquiries?pageSize=101', {
+      headers: { cookie },
+    }),
+    context('inquiries'),
+  );
+  assert.equal(response.status, 400);
+  assert.deepEqual(await response.json(), {
+    statusCode: 400,
+    invalidFields: ['pageSize', 'status'],
+  });
+});

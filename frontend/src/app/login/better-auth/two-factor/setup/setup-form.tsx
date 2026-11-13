@@ -25,10 +25,12 @@ export function TwoFactorSetup({ schemaReady }: { schemaReady: boolean }) {
       .then((result) => {
         if (!active) return;
         if (result.error || !result.data?.session) router.replace('/login');
-        else if (result.data.user.twoFactorEnabled === true) router.replace('/');
+        else if (result.data.user.twoFactorEnabled === true)
+          router.replace('/');
       })
       .catch(() => {
-        if (active) setError('No se pudo comprobar la sesión. Vuelve a iniciar sesión.');
+        if (active)
+          setError('No se pudo comprobar la sesión. Vuelve a iniciar sesión.');
       });
     return () => {
       active = false;
@@ -39,18 +41,32 @@ export function TwoFactorSetup({ schemaReady }: { schemaReady: boolean }) {
     event.preventDefault();
     setError(undefined);
     setPending(true);
-    const password = String(new FormData(event.currentTarget).get('password') ?? '');
+    const password = String(
+      new FormData(event.currentTarget).get('password') ?? '',
+    );
     try {
-      const result = await getBetterAuthClient().twoFactor.enable({ password, method: 'totp' });
-      if (result.error || result.data?.method !== 'totp' || !result.data.totpURI) {
+      const result = await getBetterAuthClient().twoFactor.enable({
+        password,
+        method: 'totp',
+      });
+      if (
+        result.error ||
+        result.data?.method !== 'totp' ||
+        !result.data.totpURI
+      ) {
         setError(
           'No se pudo iniciar el enrolamiento. Verifica la contraseña e inténtalo otra vez.',
         );
         return;
       }
-      setEnrollment({ uri: result.data.totpURI, backupCodes: result.data.backupCodes });
+      setEnrollment({
+        uri: result.data.totpURI,
+        backupCodes: result.data.backupCodes,
+      });
     } catch {
-      setError('La configuración TOTP no está disponible. Comprueba la preparación de la base.');
+      setError(
+        'La configuración TOTP no está disponible. Comprueba la preparación de la base.',
+      );
     } finally {
       setPending(false);
     }
@@ -61,7 +77,9 @@ export function TwoFactorSetup({ schemaReady }: { schemaReady: boolean }) {
     if (!enrollment || !savedCodes) return;
     setError(undefined);
     setPending(true);
-    const code = String(new FormData(event.currentTarget).get('code') ?? '').replace(/\s/g, '');
+    const code = String(
+      new FormData(event.currentTarget).get('code') ?? '',
+    ).replace(/\s/g, '');
     if (!/^\d{6}$/.test(code)) {
       setError('Ingresa el código de seis dígitos.');
       setPending(false);
@@ -106,19 +124,24 @@ export function TwoFactorSetup({ schemaReady }: { schemaReady: boolean }) {
           <p className="text-xs font-bold uppercase tracking-[0.16em] text-brand">
             Protección de cuenta
           </p>
-          <h1 className="mt-2 text-2xl font-semibold">Configura Authenticator</h1>
+          <h1 className="mt-2 text-2xl font-semibold">
+            Configura la aplicación de autenticación
+          </h1>
           {!schemaReady ? (
             <p className="mt-4 text-sm leading-6 text-ink-muted">
-              El esquema TOTP requiere aprobación y aplicación controlada de la migración. El acceso
-              al CRM permanece bloqueado.
+              El esquema TOTP requiere aprobación y aplicación controlada de la
+              migración. El acceso al CRM permanece bloqueado.
             </p>
           ) : !enrollment ? (
             <form className="mt-6 space-y-4" onSubmit={startEnrollment}>
               <p className="text-sm leading-6 text-ink-muted">
-                Usa una aplicación TOTP compatible. SafeGuard no mostrará el secreto ni los códigos
-                en otros dispositivos.
+                Usa una aplicación TOTP compatible. SafeGuard no mostrará el
+                secreto ni los códigos en otros dispositivos.
               </p>
-              <label className="block text-sm font-medium" htmlFor="setup-password">
+              <label
+                className="block text-sm font-medium"
+                htmlFor="setup-password"
+              >
                 Confirma tu contraseña
               </label>
               <input
@@ -139,8 +162,8 @@ export function TwoFactorSetup({ schemaReady }: { schemaReady: boolean }) {
           ) : (
             <div className="mt-6 space-y-6">
               <p className="text-sm leading-6 text-ink-muted">
-                Escanea este QR local con tu Authenticator. La imagen y los códigos no se envían a
-                servicios externos.
+                Escanea este QR local con tu aplicación de autenticación. La
+                imagen y los códigos no se envían a servicios externos.
               </p>
               <div className="mx-auto w-fit rounded-2xl bg-white p-4">
                 <QRCodeSVG
@@ -154,9 +177,12 @@ export function TwoFactorSetup({ schemaReady }: { schemaReady: boolean }) {
                 aria-label="Códigos de recuperación"
                 className="rounded-2xl border border-line bg-canvas p-4"
               >
-                <h2 className="font-semibold">Guarda tus códigos de recuperación</h2>
+                <h2 className="font-semibold">
+                  Guarda tus códigos de recuperación
+                </h2>
                 <p className="mt-2 text-sm text-ink-muted">
-                  Se muestran solo durante esta inscripción. Guárdalos fuera del navegador.
+                  Se muestran solo durante esta inscripción. Guárdalos fuera del
+                  navegador.
                 </p>
                 <ul className="mt-3 grid grid-cols-2 gap-2 font-mono text-sm">
                   {enrollment.backupCodes.map((code) => (
@@ -174,8 +200,11 @@ export function TwoFactorSetup({ schemaReady }: { schemaReady: boolean }) {
                 </label>
               </section>
               <form className="space-y-4" onSubmit={verifyEnrollment}>
-                <label className="block text-sm font-medium" htmlFor="setup-totp-code">
-                  Primer código de Authenticator
+                <label
+                  className="block text-sm font-medium"
+                  htmlFor="setup-totp-code"
+                >
+                  Primer código de la aplicación de autenticación
                 </label>
                 <input
                   autoComplete="one-time-code"
@@ -191,7 +220,9 @@ export function TwoFactorSetup({ schemaReady }: { schemaReady: boolean }) {
                   className="min-h-12 rounded-xl bg-brand px-5 font-semibold text-white disabled:opacity-60 dark:text-slate-950"
                   disabled={pending || !savedCodes}
                 >
-                  {pending ? 'Verificando…' : 'Confirmar y cerrar sesiones anteriores'}
+                  {pending
+                    ? 'Verificando…'
+                    : 'Confirmar y cerrar sesiones anteriores'}
                 </button>
               </form>
             </div>
